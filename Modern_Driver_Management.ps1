@@ -3,20 +3,18 @@
     Script for modern driver management solution
 
     .NOTES
-    Created on: 29.10.2020
     Created by: ershov.is@gmail.com
+    Created on: 29.10.2020
+    Updated on: 29.10.2020
+    Version History
+    1.0.0 - 
+    1.1.0 - Get UserName and Password to access AdminService from task sequence variables
 
     .DESCRIPTION
     This function uses the native .NET API to crop a square and resize an image file
 
     .PARAMETER Endpoint
     Specify the internal fully qualified domain name of the server hosting the AdminService, e.g. CM01.domain.local.
-
-    .PARAMETER UserName
-    UserName to access AdminService
-
-    .PARAMETER UsrPwd
-    User Password to access AdminService
 
     .PARAMETER BypassCertCheck
     Specify if bypass adminservice certificate check is required
@@ -29,15 +27,7 @@
 param (
     [parameter(Mandatory=$true,HelpMessage = "Specify the internal fully qualified domain name of the server hosting the AdminService, e.g. CM01.domain.local.")]
 	[ValidateNotNullOrEmpty()]
-	[string]$Endpoint,
-
-    [Parameter(Mandatory=$true,HelpMessage = "AdminService UserName")]
-    [ValidateNotNullOrEmpty()]
-    [string]$UserName,
-
-    [Parameter(Mandatory=$true,HelpMessage = "AdminService User Password")]
-    [ValidateNotNullOrEmpty()]
-    [string]$UsrPwd,
+	[string]$Endpoint,    
     
     [Parameter(Mandatory=$true,HelpMessage = "Specify if bypass self-sign AdminService certificate is needed")]
     [ValidateNotNullOrEmpty()]
@@ -45,9 +35,11 @@ param (
 )
 
 begin{
-    $Uri = "https://"+$Endpoint+"/AdminService/wmi/SMS_Package"
+
     $TSEnvironment = New-Object -ComObject "Microsoft.SMS.TSEnvironment" -ErrorAction Stop
-    if ($BypassCertCheck -eq $true){
+    $Uri = "https://"+$Endpoint+"/AdminService/wmi/SMS_Package"
+
+    if ($BypassCertCheck-eq $true){
         if (-not("dummy" -as [type])) {
             add-type -TypeDefinition @"
             using System;
@@ -67,7 +59,7 @@ begin{
 }
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = [dummy]::GetDelegate()
     }
-    $Global:Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $UserName, ($UsrPwd | ConvertTo-SecureString -Force -AsPlainText)
+    $Global:Credential = New-Object System.Management.Automation.PSCredential -ArgumentList $TSEnvironment.Value("UserName"), ($TSEnvironment.Value("UserPassword") | ConvertTo-SecureString -Force -AsPlainText)
     $Global:InvokeRestMethodCredentials = @{
         "Credential" = ($Global:Credential)
         }
