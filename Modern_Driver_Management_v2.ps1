@@ -1,31 +1,45 @@
-﻿<#
+<#
     .SYNOPSIS
-    Script for modern driver management. Script detects, downloads and installs WIM-driver package during OSD
+        Script for modern driver management. Script detects, downloads and installs WIM-driver package during OSD
     
     .DESCRIPTION
-
+        Script uses Task Sequence variables UserName and UserPassword to access AdminService Endpoint during OSD. While acting in Debug mode UserName and password must be privided as parameters.
+                
     .PARAMETER DebugMode
+        Sets script to run in Debug mode to verify
 
     .PARAMETER BareMetal
     
-    .PARAMETER NetworkLogPath
+    .PARAMETER LogPath
+
 
     .PARAMETER Endpoint
+        AdminService server FQDN, e.g. SRV.domain.local
 
     .PARAMETER UserName
+        User account with at least read access to AdminService
 
     .PARAMETER UserPassword
+        UserPassword to access AdminService endpoint
 
     .PARAMETER BypassCertCheck
+        This parameter helps to bypass self-sign or not trusted certificate check while accessing AdminService
 
     .PARAMETER OSBuild
 
     .EXAMPLE
-    .\modern_driver_management_v2.ps1 -BareMetal -Endpoint "SRV.domain.local" -BypassCertCheck $true -OSBuild 1809
-    .\modern_driver_management_v2.ps1 -Debug -Endpoint "SRV.domain.local" -NetworkLogPath "\\SRV\OSDLogs" -UserName "user" -UserPassword "StrongUserPassword" -BypassCertCheck $true -OSBuild 1709
+        Script detects driver package for operating system build 1809 and bypasses AdminService certificate check during OSD: 
+        .\modern_driver_management_v2.ps1 -BareMetal -Endpoint "SRV.domain.local" -BypassCertCheck $true -OSBuild 1809
+        Script searches AdminService for OS build 1709 driver package using specified UserName and Password and stores output log file in C:\Temp:
+        .\modern_driver_management_v2.ps1 -Debug -Endpoint "SRV.domain.local" -UserName "user" -UserPassword "StrongUserPassword" -BypassCertCheck $true -LogPath "C:\Temp" -OSBuild 1709
 
     .NOTES
-
+        Created by: @ErshovIS (https://github.com/ErshovIS)
+        Created on: 2020-11-02
+        
+        2020-11-02: Script created
+        2020-11-05: Debug mode behaviour changed. Script stores DriverManagement.log in $LogLocation path during Debug Mode. Network logging excluded for BareMetal mode during OSD.
+                    If multiple packages matching condition found the most recent is selected.
 #>
 [CmdletBinding()]
 param (
@@ -38,13 +52,12 @@ param (
     [switch]$BareMetal,
     
     # Parameter help description
-    [Parameter(Mandatory = $true, ParameterSetName = "Debug", HelpMessage = "Enter Network Location to store log files after script compleats")]
-    [Parameter(Mandatory = $true, ParameterSetName = "BareMetal")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Debug", HelpMessage = "Enter Location to store log files after script compleats")]
     [ValidateNotNullOrEmpty()]
-    [String]$NetworkLogPath,
+    [String]$LogPath,
 
     # Parameter help description
-    [Parameter(Mandatory = $true, ParameterSetName = "Debug", HelpMessage = "Specify AdminService server FQDN, e.g. CM01.domain.local ")]
+    [Parameter(Mandatory = $true, ParameterSetName = "Debug", HelpMessage = "Specify AdminService server FQDN, e.g. SRV.domain.local ")]
     [Parameter(Mandatory = $true, ParameterSetName = "BareMetal")]
     [ValidateNotNullOrEmpty()]
     [string]$Endpoint,
@@ -79,7 +92,7 @@ begin {
         $LogDirectory = $Script:TSEnvironment.Value("_SMSTSLogPath")
     }
     else {
-        $LogDirectory = $NetworkLogPath
+        $LogDirectory = $LogPath
     }
     $ContentLocation = "C:\Temp\"
     $URI = "https://$($Endpoint)/AdminService/wmi/SMS_Package"
@@ -189,14 +202,26 @@ process {
 
             [Parameter(Mandatory = $true, HelpMessage = "Specify Computer SKU", ValueFromPipelineByPropertyName)]
             [String]$ComputerSKU
-        )  
+        )
+        begin{
+            $allMatchingPackages = @()
+        }
         process {
             $temp = @{}
             $Temp = $package.Description | ConvertFrom-StringData
             if (($temp.$Build = $OSBuild) -and ($temp.SystemSKU = $ComputerSKU)){
-                Write-CMLog -Message "Found package matching condition: $($package.PackageID)" -Severity 1
-                return $package.PackageID
+                Write-CMLog -Message "Found package matching condition: $($package.PackageID)" -Severity 1                
+                $allMatchingPackages += $package
             }
+        }
+        end {
+            Write-CMLog -Message "Found total $(($allMatchingPackages | Measure-Object).Count) matching packages for OS $($OSBuild) and SKU $($ComputerSKU)" -Severity 1
+            if (($allMatchingPackages | Measure-Object).Count -gt 1){
+                Write-CMLog -Message "Detecting most recent driver package..." -Severity 1
+                $result = $allMatchingPackages | Sort-Object SourceDate | Select-Object PackageID -Last 1
+            }
+            Write-CMLog -Message "The most matching package is $($result.PackageID)" -Severity 1      
+            return $result.PackageID
         }
     }
     function Get-PackageToApply {
@@ -324,15 +349,12 @@ process {
     $Manufacturer = Get-ComputerManufacturer
     $SKU = Get-ComputerSKU -Manufacturer $Manufacturer
     $PackageID = Get-PackageToApply -Manufacturer $Manufacturer -OSBuild $OSBuild -ComputerSKU $SKU
-    Invoke-DriverInstallation -ContentLocation $ContentLocation -PackageID $PackageID
+    IF ($PSCmdlet.ParameterSetName -eq "BareMetal"){
+        Invoke-DriverInstallation -ContentLocation $ContentLocation -PackageID $PackageID
+    }
 }
-end {
-    Invoke-CMResetVariables
-    IF ($PSCmdLet.ParameterSetName -eq "Debug") {
-		$date = Get-Date -Format dd.MM.yyyy-HH.mm    
-        New-PSDrive -Name Z -PSProvider FileSystem -Root $NetworkLogPath -Credential $Script:Credentials        
-        Copy-Item "$($LogDirectory)\smsts.log" -Destination "Z:\$($date)-$($TSEnvironment.Value("OSDComputerName"))-smsts.log"
-        Copy-Item "$($LogDirectory)\DriverManagement.log" -Destination "Z:\$($date)-$($TSEnvironment.Value("OSDComputerName"))-DriverManagement.log"
-        Remove-PSDrive Z
-	}    
+end {    
+    IF ($PSCmdLet.ParameterSetName -eq "BareMetal") {		
+        Invoke-CMResetVariables
+    }
 }
