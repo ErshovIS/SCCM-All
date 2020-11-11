@@ -37,9 +37,10 @@
         Created by: @ErshovIS (https://github.com/ErshovIS)
         Created on: 2020-11-02
         
-        2020-11-02: Script created
-        2020-11-05: Debug mode behaviour changed. Script stores DriverManagement.log in $LogLocation path during Debug Mode. Network logging excluded for BareMetal mode during OSD.
+        1.0.0 - 2020-11-02: Script created
+        1.0.1 - 2020-11-05: Debug mode behaviour changed. Script stores DriverManagement.log in $LogLocation path during Debug Mode. Network logging excluded for BareMetal mode during OSD.
                     If multiple packages matching condition found the most recent is selected.
+        1.0.2 - 2020-11-10: Minor bug fixed. Incorrect condition while determining most matching package fixed.
 #>
 [CmdletBinding()]
 param (
@@ -203,22 +204,25 @@ process {
             [Parameter(Mandatory = $true, HelpMessage = "Specify Computer SKU", ValueFromPipelineByPropertyName)]
             [String]$ComputerSKU
         )
-        begin{
+        begin{            
             $allMatchingPackages = @()
         }
         process {
-            $temp = @{}
-            $Temp = $package.Description | ConvertFrom-StringData
-            if (($temp.$Build = $OSBuild) -and ($temp.SystemSKU = $ComputerSKU)){
+            $temp = @{} 
+            $Temp = $package.Description | ConvertFrom-StringData  
+            if (($temp.Build -eq $OSBuild) -and ($temp.SystemSKU -eq $ComputerSKU)){
                 Write-CMLog -Message "Found package matching condition: $($package.PackageID)" -Severity 1                
                 $allMatchingPackages += $package
-            }
+            }            
         }
         end {
             Write-CMLog -Message "Found total $(($allMatchingPackages | Measure-Object).Count) matching packages for OS $($OSBuild) and SKU $($ComputerSKU)" -Severity 1
             if (($allMatchingPackages | Measure-Object).Count -gt 1){
-                Write-CMLog -Message "Detecting most recent driver package..." -Severity 1
+                Write-CMLog -Message "Detecting most recent driver package..." -Severity 1                
                 $result = $allMatchingPackages | Sort-Object SourceDate | Select-Object PackageID -Last 1
+            }
+            else {
+                $result = $allMatchingPackages[0]
             }
             Write-CMLog -Message "The most matching package is $($result.PackageID)" -Severity 1      
             return $result.PackageID
@@ -325,14 +329,14 @@ process {
         # Performing cleanup
         # Dismounting WIM-file
         try {
-            Write-CMLog -Message "Dismounting image from $($DriverMountFlder)"
+            Write-CMLog -Message "Dismounting image from $($DriverMountFlder)" -Severity 1
             Dismount-WindowsImage -Path $DriverMountFolder -Discard -ErrorAction "Stop"
         }
         catch [System.Exception] {
             Write-CMLog -Message "Failed to dismount image from $($DriverMountFolder) with error $($_.Exception.Message)" -Severity 3
         }
         # Removing package download folder
-        Remove-Item -LiteralPath $ContentLocation -Force -Recurse
+        # Remove-Item -LiteralPath $ContentLocation -Force -Recurse
     }
 
     function Invoke-CMResetVariables {        
