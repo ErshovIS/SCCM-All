@@ -7,32 +7,23 @@
                 
     .PARAMETER DebugMode
         Sets script to run in Debug mode to verify
-
     .PARAMETER BareMetal
     
     .PARAMETER LogPath
-
-
     .PARAMETER Endpoint
         AdminService server FQDN, e.g. SRV.domain.local
-
     .PARAMETER UserName
         User account with at least read access to AdminService
-
     .PARAMETER UserPassword
         UserPassword to access AdminService endpoint
-
     .PARAMETER BypassCertCheck
         This parameter helps to bypass self-sign or not trusted certificate check while accessing AdminService
-
     .PARAMETER OSBuild
-
     .EXAMPLE
         Script detects driver package for operating system build 1809 and bypasses AdminService certificate check during OSD: 
         .\modern_driver_management_v2.ps1 -BareMetal -Endpoint "SRV.domain.local" -BypassCertCheck $true -OSBuild 1809
         Script searches AdminService for OS build 1709 driver package using specified UserName and Password and stores output log file in C:\Temp:
         .\modern_driver_management_v2.ps1 -Debug -Endpoint "SRV.domain.local" -UserName "user" -UserPassword "StrongUserPassword" -BypassCertCheck $true -LogPath "C:\Temp" -OSBuild 1709
-
     .NOTES
         Created by: @ErshovIS (https://github.com/ErshovIS)
         Created on: 2020-11-02
@@ -41,6 +32,7 @@
         1.0.1 - 2020-11-05: Debug mode behaviour changed. Script stores DriverManagement.log in $LogLocation path during Debug Mode. Network logging excluded for BareMetal mode during OSD.
                     If multiple packages matching condition found the most recent is selected.
         1.0.2 - 2020-11-10: Minor bug fixed. Incorrect condition while determining most matching package fixed.
+        1.0.3 - 2021-01-20: Hewlett-Packard Mnaufacturer detection fixed. Changed default download location based on _OSDDetectedWinDrive variable
 #>
 [CmdletBinding()]
 param (
@@ -94,8 +86,8 @@ begin {
     }
     else {
         $LogDirectory = $LogPath
-    }
-    $ContentLocation = "C:\Temp\"
+    }    
+    $ContentLocation = Join-Path $TSEnvironment.Value("_OSDDetectedWinDrive") -ChildPath "Temp"
     $URI = "https://$($Endpoint)/AdminService/wmi/SMS_Package"
 
     if ($BypassCertCheck-eq $true){
@@ -178,13 +170,13 @@ process {
         )
         Write-CMLog -Message "Detecting Computer SKU" -Severity 1
         switch ($Manufacturer) {
-            'HP' {
+            {($_ -eq 'HP') -or ($_ -like 'Hewlett*')}{
                 $ComputerSKU = (Get-WmiObject -class Win32_ComputerSystem | Select-Object Manufacturer, Model, SystemSKUNumber).SystemSKUNumber.SubString(0,4)
             }
             'Lenovo' {
                 $ComputerSKU = (Get-WmiObject -class Win32_ComputerSystem | Select-Object Manufacturer, Model, SystemSKUNumber).Model.SubString(0,4)
             }
-            'VMWare, Inc.' {
+            {($_ -like 'VMWare*')} {
                 $ComputerSKU = 'VMWR'
             }
         }
