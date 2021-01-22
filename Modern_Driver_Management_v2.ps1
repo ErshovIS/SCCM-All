@@ -32,7 +32,7 @@
         1.0.1 - 2020-11-05: Debug mode behaviour changed. Script stores DriverManagement.log in $LogLocation path during Debug Mode. Network logging excluded for BareMetal mode during OSD.
                     If multiple packages matching condition found the most recent is selected.
         1.0.2 - 2020-11-10: Minor bug fixed. Incorrect condition while determining most matching package fixed.
-        1.0.3 - 2021-01-20: Hewlett-Packard Mnaufacturer detection fixed. Changed default download location based on _OSDDetectedWinDrive variable
+        1.0.3 - 2021-01-20: Hewlett-Packard Manufacturer detection fixed. Changed default download location based on _SMSTSMDataPath variable
 #>
 [CmdletBinding()]
 param (
@@ -83,11 +83,11 @@ begin {
     if ($PSCmdlet.ParameterSetName -eq "BareMetal"){
         $TSEnvironment = New-Object -ComObject "Microsoft.SMS.TSEnvironment" -ErrorAction Stop
         $LogDirectory = $Script:TSEnvironment.Value("_SMSTSLogPath")
+        $ContentLocation = Join-Path $TSEnvironment.Value("_SMSTSMDataPath") -ChildPath "Temp"
     }
     else {
         $LogDirectory = $LogPath
-    }    
-    $ContentLocation = Join-Path $TSEnvironment.Value("_OSDDetectedWinDrive") -ChildPath "Temp"
+    }        
     $URI = "https://$($Endpoint)/AdminService/wmi/SMS_Package"
 
     if ($BypassCertCheck-eq $true){
