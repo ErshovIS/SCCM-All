@@ -14,27 +14,12 @@ if((Get-PSDrive -Name $PSD -PSProvider CMSite -ErrorAction SilentlyContinue) -eq
 Set-Location "$($PSD):\" @initParams
 
 
-$BasePath = $PSD + ":\DeviceCollection\P07-Windows Clients\Test"
+$BasePath = $PSD + ":\DeviceCollection\$($PSD)-Windows Clients\Test"
 
 # Проверка корневого каталога для каталогов производителей
 If (!(Test-Path $BasePath)){
     New-Item -Path $BasePath
 }
-
-$PSD = "P07" # Site code 
-$ProviderMachineName = "S701CM-P07.sibur.local" # SMS Provider machine name
-
-$initParams = @{}
-
-if((Get-Module ConfigurationManager) -eq $null) {
-    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
-}
-
-if((Get-PSDrive -Name $PSD -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
-    New-PSDrive -Name $PSD -PSProvider CMSite -Root $ProviderMachineName @initParams
-}
-
-Set-Location "$($PSD):\" @initParams
 
 function New-SCCMCollection {
     [CmdletBinding()]
