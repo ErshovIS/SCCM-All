@@ -1,5 +1,5 @@
-$PSD = "P07" # Site code 
-$ProviderMachineName = "S701CM-P07.sibur.local" # SMS Provider machine name
+$PSD = "Site Code" # Site code 
+$ProviderMachineName = "Server FQDN" # SMS Provider machine name
 
 $initParams = @{}
 
