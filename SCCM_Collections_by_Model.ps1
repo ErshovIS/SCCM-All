@@ -1,27 +1,4 @@
-$PSD = "Site Code" # Site code 
-$ProviderMachineName = "Server FQDN" # SMS Provider machine name
-
-$initParams = @{}
-
-if((Get-Module ConfigurationManager) -eq $null) {
-    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
-}
-
-if((Get-PSDrive -Name $PSD -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
-    New-PSDrive -Name $PSD -PSProvider CMSite -Root $ProviderMachineName @initParams
-}
-
-Set-Location "$($PSD):\" @initParams
-
-
-$BasePath = $PSD + ":\DeviceCollection\$($PSD)-Windows Clients\Test"
-
-# Проверка корневого каталога для каталогов производителей
-If (!(Test-Path $BasePath)){
-    New-Item -Path $BasePath
-}
-
-function New-SCCMCollection {
+function Add-Collections {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Creats Limiting collection")]
@@ -30,75 +7,148 @@ function New-SCCMCollection {
         [Parameter(Mandatory = $true, ParameterSetName = "Device", HelpMessage = "Creats Device Collection")]
         [switch]$Device,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Collection Name")]
-        [Parameter(Mandatory = $true, ParameterSetName = "Device")]
-        [string]$CollectionName,
-
-        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Limiting Collection Name")]
-        [Parameter(Mandatory = $true, ParameterSetName = "Device")]
+        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Limiting Collection Name")]        
         [string]$LimitingCollection,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Collection Folder")]
-        [Parameter(Mandatory = $true, ParameterSetName = "Device")]
+        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Collection Folder")]        
         [string]$CollectionFolder,
+        
+        [Parameter(Mandatory = $true, ParameterSetName = "Device", ValueFromPipeline)]        
+        $InputValues,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Manufacturer")]
-        [Parameter(Mandatory = $true, ParameterSetName = "Device")]
-        [string]$Manufacturer,
-
-        [Parameter(Mandatory = $true, ParameterSetName = "Device", HelpMessage = "Model")]
+        [Parameter(Mandatory = $true, ParameterSetName = "Limiting", HelpMessage = "Manufacturer Name")]
+        [Parameter(Mandatory = $true, ParameterSetName = "Device", HelpMessage = "Manufacturer Name", ValueFromPipelineByPropertyName)]        
+        [string]$Manufacturer,        
+        
+        [Parameter(Mandatory = $true, ParameterSetName = "Device", HelpMessage = "Computer Model Name", ValueFromPipelineByPropertyName)]
         [string]$Model
     )
-    $BasicQuery = "select distinct 
-    SMS_R_SYSTEM.ResourceID
-    ,SMS_R_SYSTEM.ResourceType
-    ,SMS_R_SYSTEM.Name
-    ,SMS_R_SYSTEM.SMSUniqueIdentifier
-    ,SMS_R_SYSTEM.ResourceDomainORWorkgroup
-    ,SMS_R_SYSTEM.Client 
-    from SMS_R_System 
-    inner join SMS_G_System_COMPUTER_SYSTEM on SMS_G_System_COMPUTER_SYSTEM.ResourceId = SMS_R_System.ResourceId 
-    inner join SMS_G_System_OPERATING_SYSTEM on SMS_G_System_OPERATING_SYSTEM.ResourceID = SMS_R_System.ResourceId 
-    WHERE SMS_G_System_OPERATING_SYSTEM.ProductType = `"1`""
+    
+    begin {
+        $BasicQuery = "select distinct 
+        SMS_R_SYSTEM.ResourceID
+        ,SMS_R_SYSTEM.ResourceType
+        ,SMS_R_SYSTEM.Name
+        ,SMS_R_SYSTEM.SMSUniqueIdentifier
+        ,SMS_R_SYSTEM.ResourceDomainORWorkgroup
+        ,SMS_R_SYSTEM.Client 
+        from SMS_R_System 
+        inner join SMS_G_System_COMPUTER_SYSTEM on SMS_G_System_COMPUTER_SYSTEM.ResourceId = SMS_R_System.ResourceId 
+        inner join SMS_G_System_OPERATING_SYSTEM on SMS_G_System_OPERATING_SYSTEM.ResourceID = SMS_R_System.ResourceId 
+        WHERE SMS_G_System_OPERATING_SYSTEM.ProductType = `"1`""        
+    }
+    
+    process {
+        Switch ($PSCmdlet.ParameterSetName){
+            "Limiting" {
+                Switch ($Manufacturer){
+                    HP {
+                        $CollectionName = "$($PSD)-$($Manufacturer)-All"
+                        $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Manufacturer = `"HP`" or 
+                        SMS_G_System_COMPUTER_SYSTEM.Manufacturer Like `"Hewlett%`""
+                        $RuleName = "$($PSD)-$($Manufacturer)-All"
+                        $Comment = "All $($Manufacturer) devices"
+                    }
+                    default {
+                        $CollectionName = "$($PSD)-$($Manufacturer)-All"
+                        $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Manufacturer like `"$($Manufacturer)%`""
+                        $RuleName = "$($PSD)-$($Manufacturer)-All"
+                        $Comment = "All $($Manufacturer) devices"
+                    }
+                }            
+            }
+            "Device" {
+                $CollectionName = "$($PSD)-$($Model)"
+                $CollectionFolder = $InputValues.folder
+                $LimitingCollection = "$($PSD)-$($Manufacturer)-All"
+                $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Model like `"$($InputValues.sku)%`""
+                $RuleName = "$($PSD)-$($InputValues.sku)"                
+                $Comment = "All $($Model) ($($InputValues.sku)) Devices"
+            }
+        }
+        if ($manufacturer -ne 'Other'){
+            # Uncomemnt the following lines for debug collection creation process
+            <#Write-Host "Creating device collection:"
+            Write-Host "Name: $($CollectionName)"
+            Write-Host "Limiting Collection: $($LimitingCollection)"
+            Write-Host "Collection Rule: $($RuleName)"
+            Write-Host "Rule Query: $($Query)"
+            Write-Host "Move $($CollectionName) to $CollectionFolder"
+            Write-Host "------------------------------"#>
 
-    Switch ($PSCmdlet.ParameterSetName){
-        "Limiting" {
-            Switch ($Manufacturer){
-                HP {
-                    $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Manufacturer = `"HP`" or 
-                    SMS_G_System_COMPUTER_SYSTEM.Manufacturer Like `"Hewlett%`""
-                    $RuleName = "$($PSD)-$($Manufacturer)-All"
-                    $Comment = "All $($Manufacturer) devices"
-                }
-                default {
-                    $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Manufacturer like `"$($Manufacturer)%`""
-                    $RuleName = "$($PSD)-$($Manufacturer)-All"
-                    $Comment = "All $($Manufacturer) devices"
-                }
+            if ($null -eq (Get-CMDeviceCollection -Name $CollectionName)){
+                New-CMDeviceCollection -Name $CollectionName -LimitingCollectionName $LimitingCollection `
+                -Comment $Comment | Out-Null
+                Add-CMDeviceCollectionQueryMembershipRule -RuleName $RuleName -CollectionName $CollectionName -QueryExpression $Query
+                Move-CMObject -FolderPath $CollectionFolder -InputObject (Get-CMDeviceCollection -Name $CollectionName)
+            }
+            elseif ($null -eq $RuleName) {
+                Add-CMDeviceCollectionQueryMembershipRule -RuleName $RuleName -CollectionName $CollectionName -QueryExpression $Query
             }            
         }
-        "Device" {
-            $Query = "$($BasicQuery) and SMS_G_System_COMPUTER_SYSTEM.Model like `"$($Model)%`""
-            $RuleName = "$($PSD)-$($Manufacturer)-$($Model)"
-            $Comment = "All $($Model) Devices"
+        Switch ($PSCmdlet.ParameterSetName){
+            "Limiting" {
+                Get-CMCollection -Name "$($PSD)-Other" | Add-CMDeviceCollectionExcludeMembershipRule -ExcludeCollectionName $CollectionName                
+            }
         }
     }
-   
-
-    New-CMDeviceCollection -Name $CollectionName -LimitingCollectionName $LimitingCollection -RefreshType Periodic `
-    -RefreshSchedule $Schedule -Comment $Comment | Out-Null
-    Add-CMDeviceCollectionQueryMembershipRule -RuleName $RuleName -CollectionName $CollectionName -QueryExpression $Query
-    Move-CMObject -FolderPath $CollectionFolder -InputObject (Get-CMDeviceCollection -Name $CollectionName)
+    
+    end {
+        
+    }
 }
 
-$BasePath = $PSD + ":\DeviceCollection\P07-Windows Clients\Test"
+# Site code
+$PSD = "P01"  
+# SMS Provider machine FQDN-name
+$ProviderMachineName = "SERVER.domain.local" 
 
-# Проверка корневого каталога для каталогов производителей
+$initParams = @{}
+
+if($null -eq (Get-Module ConfigurationManager)) {
+    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
+}
+
+if($null -eq (Get-PSDrive -Name $PSD -PSProvider CMSite -ErrorAction SilentlyContinue)) {
+    New-PSDrive -Name $PSD -PSProvider CMSite -Root $ProviderMachineName @initParams
+}
+
+Set-Location "$($PSD):\" @initParams
+
+# Setting Base folder for all collections
+$BasePath = $PSD + ":\DeviceCollection\$($PSD)-Windows Clients\$($PSD)-Коллекции по производителям"
+# Setting Base limiting collection
+$BaseLimitingCollection = "$($PSD)-Computers"
+
+# Setting up proxy settings
+$proxy = "http://s701ss-squid01.sibur.local:8080"
+$wc = New-Object System.Net.WebClient
+$wc.Proxy = [System.Net.WebProxy]::new($Proxy)
+$Wc.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+
+# Getting Lenovo catalog from site
+[xml]$COMPUTERXML = $wc.DownloadString('https://download.lenovo.com/cdrt/td/catalog.xml')
+
+# Check if Base Folder exists
 If (!(Test-Path $BasePath)){
     New-Item -Path $BasePath
 }
 
-# Выборка всех проинвентаризированных моделей производителей (только клиентские операционные системы)
+# Create folder for all unknown device models collection
+$OtherFolder = $BasePath+"\Other"
+If (!(Test-Path $OtherFolder)){
+    New-Item -Path $OtherFolder
+}
+
+# Create Collection for all unknown device models and move it to $OtherFolder
+# This base collection includes all computers from limiting collection $BaseLimitingCollection
+If ($null -eq (Get-CMDeviceCollection -Name "$($PSD)-Other")){
+    New-CMDeviceCollection -Name "$($PSD)-Other" -LimitingCollectionName $BaseLimitingCollection
+    Get-CMCollection -Name "$($PSD)-Other" | Add-CMDeviceCollectionIncludeMembershipRule -IncludeCollectionName $BaseLimitingCollection
+    Move-CMObject -FolderPath $OtherFolder -InputObject (Get-CMDeviceCollection -Name "$($PSD)-Other")
+}
+
+# Selecting all invetoried manufactures on client devices
 $AllManufacturers = Invoke-CMWmiQuery -Query "select distinct 
 SMS_G_System_COMPUTER_SYSTEM.Manufacturer
 , SMS_G_System_COMPUTER_SYSTEM.Model
@@ -106,46 +156,51 @@ from SMS_R_System
 inner join SMS_G_System_COMPUTER_SYSTEM on SMS_G_System_COMPUTER_SYSTEM.ResourceId = SMS_R_System.ResourceId 
 inner join SMS_G_System_OPERATING_SYSTEM on SMS_G_System_OPERATING_SYSTEM.ResourceID = SMS_R_System.ResourceId
 WHERE SMS_G_System_OPERATING_SYSTEM.ProductType = `"1`"" `
-| Select-Object manufacturer, model
+| Select-Object manufacturer, model, sku, folder
 
-$ManufacturersHashTable = $AllManufacturers | Group-Object Manufacturer -AsHashTable
+$NewValues = @()
 
-foreach ($manufacturer in $ManufacturersHashTable.GetEnumerator()){
-    Switch ($manufacturer.Name){
+# Data alignment
+foreach ($manufacturer in $AllManufacturers){
+    Switch ($manufacturer.manufacturer){
         {($_ -eq 'HP') -or ($_ -like 'Hewlet*')}{
-            $ManufacturerFolder = $BasePath + "\" + "HP"
-            $ManufacturerName = "HP"    
+            $manufacturer.manufacturer = "HP"
+            $manufacturer.sku = $manufacturer.model
+            $manufacturer.folder = $BasePath + "\$($manufacturer.manufacturer)"            
         }
         {$_ -like 'ASUS*'} {
-            $ManufacturerFolder = $BasePath + "\" + "ASUS"
-            $ManufacturerName = "ASUS"
+            $manufacturer.manufacturer = "ASUS"
+            $manufacturer.sku = $manufacturer.model
+            $manufacturer.folder = $BasePath + "\$($manufacturer.manufacturer)" 
         }
-        default {
-            $ManufacturerFolder = $BasePath + "\" + $manufacturer.Name
-            $ManufacturerName = $manufacturer.Name
+        "Lenovo"{
+            $manufacturer.manufacturer = "Lenovo"
+            $manufacturer.sku = $manufacturer.model.SubString(0,4)
+            # Setting readable model from downloaded file
+            $manufacturer.model = ($COMPUTERXML.Products.Product.Queries | Where-Object {$_.Types.Type -eq $manufacturer.sku} | select-object version | Get-Unique).version
+            $manufacturer.folder = $BasePath + "\$($manufacturer.manufacturer)" 
+        }
+        default {            
+            $manufacturer.manufacturer = "Other"
+            $manufacturer.folder = $BasePath + "\$($manufacturer.manufacturer)" 
         }
     }
-    If (!(Test-Path $ManufacturerFolder)){
-        Write-Host "Path $($ManufacturerFolder) not exists"
-        New-Item -Path $ManufacturerFolder
-    }
-    If ($null -eq (Get-CMDeviceCollection -Name "$($PSD)-$($ManufacturerName)-All")){
-        Write-Host "Creating collection $($PSD)-$($ManufacturerName)-All in $($ManufacturerFolder)"
-        New-SCCMCollection -Limiting -CollectionName "$($PSD)-$($ManufacturerName)-All" -LimitingCollection "P07-Computers" -CollectionFolder $ManufacturerFolder -Manufacturer $ManufacturerName
-    }
+    $NewValues+= $manufacturer
+}
 
-    foreach ($model in $manufacturer.Value){
-        Switch ($Manufacturer.Name){
-            Lenovo {
-                $ModelName = $model.model.SubString(0,4)
-            }
-            default {
-                $ModelName = $model.model
-            }
-        }
-        If ($null -eq (Get-CMDeviceCollection -Name "$($PSD)-$($ManufacturerName)-$($ModelName)")){
-            Write-Host "Creating collection $($PSD)-$($ManufacturerName)-$($ModelName) in $($ManufacturerFolder)"
-            New-SCCMCollection -Device -CollectionName "$($PSD)-$($ManufacturerName)-$($ModelName)" -LimitingCollection "$($PSD)-$($ManufacturerName)-All" -CollectionFolder $ManufacturerFolder -Manufacturer $ManufacturerName -Model $ModelName
-        } 
-    }
+# Convert to hash-table
+$ManufacturersHashTable = $NewValues | Select-Object manufacturer, model, sku, folder -Unique | Group-Object manufacturer -AsHashTable
+
+foreach ($item in $ManufacturersHashTable.GetEnumerator()){
+    $ManufacturerFolder = $BasePath+"\"+$item.key.ToString()
+    If (!(Test-Path $ManufacturerFolder)){
+        New-Item -Path $ManufacturerFolder
+    }  
+    # Create limiting collections  
+    Add-Collections -Limiting -LimitingCollection $BaseLimitingCollection -Manufacturer $item.key.ToString() -CollectionFolder $ManufacturerFolder
+    # Create device collection fot each model
+    foreach ($currentitem in $ManufacturersHashTable[$item.key].model){        
+        $values = $ManufacturersHashTable[$item.key] | Where-Object model -EQ $currentitem | Select-Object sku, folder
+        $values | Add-Collections -Device -Model $currentitem -Manufacturer $item.key.ToString()        
+    } 
 }
