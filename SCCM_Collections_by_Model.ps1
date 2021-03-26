@@ -121,7 +121,7 @@ $BasePath = $PSD + ":\DeviceCollection\$($PSD)-Windows Clients\$($PSD)-Колл�
 $BaseLimitingCollection = "$($PSD)-Computers"
 
 # Setting up proxy settings
-$proxy = "http://s701ss-squid01.sibur.local:8080"
+$proxy = "proxy_server_name:port"
 $wc = New-Object System.Net.WebClient
 $wc.Proxy = [System.Net.WebProxy]::new($Proxy)
 $Wc.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
